@@ -1,0 +1,130 @@
+[package]
+name = "rustrag"
+version = "0.1.0"
+edition = "2021"
+authors = ["Your Name <your.email@example.com>"]
+description = "Enterprise Contextual AI Assistant Platform using RAG"
+license = "MIT"
+repository = "https://github.com/yourusername/rustrag"
+keywords = ["rag", "ai", "llm", "vector-search", "enterprise"]
+categories = ["web-programming", "database", "text-processing"]
+
+# Workspace configuration
+[workspace]
+members = [
+    ".",
+    "cli"
+]
+
+[dependencies]
+# Web Framework & HTTP
+axum = { version = "0.7", features = ["multipart", "tower-log"] }
+tower = { version = "0.4", features = ["full"] }
+tower-http = { version = "0.5", features = ["fs", "cors", "trace"] }
+hyper = { version = "1.0", features = ["full"] }
+
+# Async Runtime
+tokio = { version = "1.0", features = ["full"] }
+futures = "0.3"
+
+# Database & ORM
+sqlx = { version = "0.7", features = ["postgres", "uuid", "chrono", "runtime-tokio-rustls"] }
+sea-orm = { version = "0.12", features = ["sqlx-postgres", "runtime-tokio-rustls", "macros"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.8"
+
+# Document Processing
+pdf-extract = "0.7"
+lopdf = "0.32"
+docx-rs = "0.4"
+
+# Vector Operations & Embeddings
+ndarray = "0.15"
+candle-core = { version = "0.6", optional = true }  # For local embeddings
+candle-nn = { version = "0.6", optional = true }
+candle-transformers = { version = "0.6", optional = true }
+
+# LLM Integration
+reqwest = { version = "0.11", features = ["json", "multipart"] }
+openai-api-rs = "5.0"
+
+# Vector Database Clients
+qdrant-client = { version = "1.7", features = ["serde"] }
+
+# Caching
+redis = { version = "0.24", features = ["tokio-comp", "connection-manager"] }
+
+# Configuration & Environment
+config = "0.14"
+dotenvy = "0.15"
+
+# Logging & Monitoring
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+tracing-appender = "0.2"
+
+# Error Handling
+anyhow = "1.0"
+thiserror = "1.0"
+
+# Utilities
+uuid = { version = "1.6", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+url = "2.4"
+regex = "1.10"
+once_cell = "1.19"
+
+# Security & Authentication
+jsonwebtoken = "9.2"
+bcrypt = "0.15"
+argon2 = "0.5"
+
+# CLI (for main binary)
+clap = { version = "4.0", features = ["derive", "env"], optional = true }
+
+# Testing
+tokio-test = "0.4"
+
+[dev-dependencies]
+# Testing utilities
+rstest = "0.18"
+mockall = "0.12"
+wiremock = "0.5"
+tempfile = "3.8"
+
+[features]
+default = ["web-server"]
+web-server = ["axum", "tower", "tower-http"]
+cli = ["clap"]
+local-embeddings = ["candle-core", "candle-nn", "candle-transformers"]
+all = ["web-server", "cli", "local-embeddings"]
+
+# Binary targets
+[[bin]]
+name = "rustrag-server"
+path = "src/main.rs"
+required-features = ["web-server"]
+
+[[bin]]
+name = "rustrag-cli"
+path = "cli/src/main.rs"
+required-features = ["cli"]
+
+# Optimization profiles
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+
+[profile.dev]
+opt-level = 0
+debug = true
+
+# Metadata for cargo-generate or similar tools
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
