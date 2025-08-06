@@ -1,5 +1,6 @@
-use crate::models::{DocumentChunk, Query};
+use crate::models::{DocumentChunk, Query, RetrievedChunk};
 use crate::utils::Result;
+use crate::core::similarity_search::SearchFilters;
 use async_trait::async_trait;
 use qdrant_client::Qdrant;
 use serde::{Deserialize, Serialize};
@@ -29,6 +30,17 @@ pub trait VectorStore {
         limit: usize,
         threshold: f32,
     ) -> Result<Vec<SimilarityMatch>>;
+    
+    /// Advanced similarity search with filters and enhanced results
+    async fn similarity_search(
+        &self,
+        query_embedding: &[f32],
+        limit: usize,
+        filters: Option<&SearchFilters>,
+    ) -> Result<Vec<RetrievedChunk>>;
+    
+    /// Get a chunk by its ID with embedding
+    async fn get_chunk_by_id(&self, chunk_id: &Uuid) -> Result<Option<RetrievedChunk>>;
     
     /// Delete a vector by chunk ID
     async fn delete_vector(&self, chunk_id: Uuid) -> Result<()>;
@@ -334,13 +346,37 @@ impl VectorStore for QdrantVectorStore {
         Ok(())
     }
 
+    async fn similarity_search(
+        &self,
+        _query_embedding: &[f32],
+        limit: usize,
+        _filters: Option<&SearchFilters>,
+    ) -> Result<Vec<RetrievedChunk>> {
+        // Mock implementation - this would use actual Qdrant search
+        tracing::info!("Mock Qdrant: Searching for {} similar vectors", limit);
+        
+        // For now, return empty results
+        Ok(vec![])
+    }
+
+    async fn get_chunk_by_id(&self, chunk_id: &Uuid) -> Result<Option<RetrievedChunk>> {
+        // Mock implementation - this would query Qdrant for the specific chunk
+        tracing::info!("Mock Qdrant: Getting chunk by ID: {}", chunk_id);
+        
+        Ok(None)
+    }
+
     async fn get_collection_info(&self) -> Result<CollectionInfo> {
         // For now, return mock collection info
         Ok(CollectionInfo {
             name: self.config.collection_name.clone(),
             status: "Ready".to_string(),
-            vectors_count: 0,
+            vectors_count: Some(0),
             points_count: 0,
+            vectors_config: Some(VectorConfig {
+                size: self.config.vector_size as u64,
+                distance: "Cosine".to_string(),
+            }),
         })
     }
 }
@@ -385,12 +421,67 @@ impl VectorStore for MockVectorStore {
         Ok(())
     }
     
+    async fn similarity_search(
+        &self,
+        query_embedding: &[f32],
+        limit: usize,
+        _filters: Option<&SearchFilters>,
+    ) -> Result<Vec<RetrievedChunk>> {
+        tracing::info!("Mock: Similarity search for {} results with embedding dim {}", limit, query_embedding.len());
+        
+        // Generate mock results
+        let mock_results = (0..std::cmp::min(limit, 3))
+            .map(|i| RetrievedChunk {
+                id: Uuid::new_v4(),
+                chunk_id: Uuid::new_v4(),
+                document_id: Uuid::new_v4(),
+                document_title: format!("Mock Document {}", i + 1),
+                content: format!("Mock content for chunk {} - this would be actual retrieved content from the vector database based on similarity to the query.", i + 1),
+                similarity_score: 0.95 - (i as f32 * 0.1), // Decreasing similarity scores
+                chunk_index: i as i32,
+                embedding: Some(vec![0.1; query_embedding.len()]), // Mock embedding
+                metadata: serde_json::json!({
+                    "source": "mock",
+                    "chunk_type": "text"
+                }),
+                created_at: chrono::Utc::now(),
+            })
+            .collect();
+        
+        Ok(mock_results)
+    }
+
+    async fn get_chunk_by_id(&self, chunk_id: &Uuid) -> Result<Option<RetrievedChunk>> {
+        tracing::info!("Mock: Getting chunk by ID: {}", chunk_id);
+        
+        // Return a mock chunk for testing
+        Ok(Some(RetrievedChunk {
+            id: *chunk_id,
+            chunk_id: *chunk_id,
+            document_id: Uuid::new_v4(),
+            document_title: "Mock Document".to_string(),
+            content: "Mock chunk content for testing similarity search functionality.".to_string(),
+            similarity_score: 1.0,
+            chunk_index: 0,
+            embedding: Some(vec![0.1; 384]), // Standard embedding dimension
+            metadata: serde_json::json!({
+                "source": "mock",
+                "chunk_type": "text"
+            }),
+            created_at: chrono::Utc::now(),
+        }))
+    }
+
     async fn get_collection_info(&self) -> Result<CollectionInfo> {
         Ok(CollectionInfo {
             name: "mock_collection".to_string(),
             status: "Green".to_string(),
-            vectors_count: 0,
-            points_count: 0,
+            vectors_count: Some(100),
+            points_count: 100,
+            vectors_config: Some(VectorConfig {
+                size: 384,
+                distance: "Cosine".to_string(),
+            }),
         })
     }
 }
@@ -408,8 +499,16 @@ pub struct SimilarityMatch {
 pub struct CollectionInfo {
     pub name: String,
     pub status: String,
-    pub vectors_count: u64,
+    pub vectors_count: Option<u64>,
     pub points_count: u64,
+    pub vectors_config: Option<VectorConfig>,
+}
+
+/// Vector configuration information
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VectorConfig {
+    pub size: u64,
+    pub distance: String,
 }
 
 /// Payload field types for indexing

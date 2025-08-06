@@ -14,15 +14,19 @@ pub struct QueryResponse {
     pub created_at: DateTime<Utc>,
 }
 
-/// Retrieved chunk with similarity score
+/// Retrieved chunk with similarity score and enhanced metadata
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RetrievedChunk {
-    pub chunk_id: Uuid,
+    pub id: Uuid,  // chunk_id for compatibility
+    pub chunk_id: Uuid,  // Keep for backwards compatibility
     pub document_id: Uuid,
     pub document_title: String,
     pub content: String,
     pub similarity_score: f32,
     pub chunk_index: i32,
+    pub embedding: Option<Vec<f32>>,
+    pub metadata: serde_json::Value,
+    pub created_at: DateTime<Utc>,
 }
 
 /// Citation information for transparency
