@@ -67,10 +67,20 @@ candle-transformers = { version = "0.3", optional = true }
 regex = "1.0"
 scraper = "0.17"  # For HTML content extraction (correct name)
 pulldown-cmark = "0.9"  # For Markdown processing
-tokenizers = { version = "0.15", optional = true }
 
 # HTTP Client for external APIs
 reqwest = { version = "0.11", features = ["json", "stream"] }
+
+# Embedding Providers
+# OpenAI API client (maintained alternative)
+async-openai = { version = "0.21", optional = true }
+# ONNX Runtime for local models (using release candidate)
+ort = { version = "2.0.0-rc.10", optional = true }
+# HuggingFace tokenizers and hub
+hf-hub = { version = "0.3", optional = true }
+tokenizers = { version = "0.15", optional = true }
+# Base64 encoding for API keys
+base64 = "0.22"
 
 # CLI (for main binary)
 clap = { version = "4.0", features = ["derive", "env"], optional = true }
@@ -83,9 +93,15 @@ wiremock = "0.5"
 tempfile = "3.8"
 
 [features]
-default = ["web-server"]
+default = ["web-server", "embeddings-mock"]
 web-server = ["axum", "tower", "tower-http"]
 cli = ["clap"]
+
+# Embedding provider features
+embeddings-openai = ["async-openai"]
+embeddings-onnx = ["ort", "hf-hub", "tokenizers"]
+embeddings-candle = ["candle-core", "candle-nn", "candle-transformers", "tokenizers"]
+embeddings-mock = []  # For testing and development
 
 # Binary targets
 [[bin]]

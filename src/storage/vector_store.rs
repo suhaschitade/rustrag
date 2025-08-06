@@ -167,10 +167,84 @@ impl QdrantVectorStore {
             return Ok(());
         }
 
-        // For now, just log that this would store embeddings
-        // The new API is too complex to implement without more specific documentation
-        tracing::info!("Would store {} embeddings in batch", embeddings.len());
+        use qdrant_client::qdrant::{PointStruct, UpsertPoints, Vectors};
+        use std::collections::HashMap;
+
+        let embeddings_len = embeddings.len();
         
+        // Convert embeddings to Qdrant points
+        let points: Vec<PointStruct> = embeddings
+            .into_iter()
+            .map(|(chunk_id, embedding, metadata)| {
+                // Convert metadata to HashMap<String, Value>
+                let payload: HashMap<String, qdrant_client::qdrant::Value> = metadata
+                    .as_object()
+                    .unwrap_or(&serde_json::Map::new())
+                    .iter()
+                    .map(|(k, v)| {
+                        let qdrant_value = match v {
+                            serde_json::Value::String(s) => qdrant_client::qdrant::Value {
+                                kind: Some(qdrant_client::qdrant::value::Kind::StringValue(s.clone())),
+                            },
+                            serde_json::Value::Number(n) => {
+                                if let Some(i) = n.as_i64() {
+                                    qdrant_client::qdrant::Value {
+                                        kind: Some(qdrant_client::qdrant::value::Kind::IntegerValue(i)),
+                                    }
+                                } else if let Some(f) = n.as_f64() {
+                                    qdrant_client::qdrant::Value {
+                                        kind: Some(qdrant_client::qdrant::value::Kind::DoubleValue(f)),
+                                    }
+                                } else {
+                                    qdrant_client::qdrant::Value {
+                                        kind: Some(qdrant_client::qdrant::value::Kind::StringValue(n.to_string())),
+                                    }
+                                }
+                            },
+                            serde_json::Value::Bool(b) => qdrant_client::qdrant::Value {
+                                kind: Some(qdrant_client::qdrant::value::Kind::BoolValue(*b)),
+                            },
+                            _ => qdrant_client::qdrant::Value {
+                                kind: Some(qdrant_client::qdrant::value::Kind::StringValue(v.to_string())),
+                            },
+                        };
+                        (k.clone(), qdrant_value)
+                    })
+                    .collect();
+
+                PointStruct {
+                    id: Some(chunk_id.to_string().into()),
+                    vectors: Some(Vectors {
+                        vectors_options: Some(qdrant_client::qdrant::vectors::VectorsOptions::Vector(
+                            qdrant_client::qdrant::Vector {
+                                data: embedding,
+                                indices: None,
+                                vector: None,
+                                vectors_count: None,
+                            },
+                        )),
+                    }),
+                    payload,
+                }
+            })
+            .collect();
+
+        let upsert_request = UpsertPoints {
+            collection_name: self.config.collection_name.clone(),
+            points,
+            wait: Some(true),
+            ordering: None,
+            shard_key_selector: None,
+        };
+
+        self.client
+            .upsert_points(upsert_request)
+            .await
+            .map_err(|e| {
+                crate::utils::Error::vector_db(format!("Failed to upsert points: {}", e))
+            })?;
+
+        tracing::info!("Successfully stored {} embeddings in batch", embeddings_len);
         Ok(())
     }
 }

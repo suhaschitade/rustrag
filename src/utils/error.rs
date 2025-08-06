@@ -125,6 +125,13 @@ impl Error {
         }
     }
 
+    /// Create a new configuration error
+    pub fn configuration<T: Into<String>>(message: T) -> Self {
+        Self::Internal {
+            message: format!("Configuration error: {}", message.into()),
+        }
+    }
+
     /// Get HTTP status code for this error
     pub fn status_code(&self) -> u16 {
         match self {

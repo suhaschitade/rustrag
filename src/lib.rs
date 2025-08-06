@@ -3,10 +3,14 @@
 //! A high-performance, privacy-focused Retrieval-Augmented Generation (RAG) platform
 //! built in Rust for enterprise applications.
 
+#[cfg(feature = "web-server")]
 pub mod api;
 pub mod config;
 pub mod core;
+// pub mod embedding; // TODO: Implement embedding module
+pub mod indexing;
 pub mod models;
+// pub mod processing; // TODO: Implement processing module
 pub mod storage;
 pub mod utils;
 
