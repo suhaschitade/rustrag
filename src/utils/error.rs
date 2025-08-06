@@ -95,6 +95,14 @@ impl Error {
         }
     }
 
+    /// Create a simple validation error with default field
+    pub fn validation_simple<T: Into<String>>(message: T) -> Self {
+        Self::Validation {
+            field: "content".to_string(),
+            message: message.into(),
+        }
+    }
+
     /// Create a new not found error
     pub fn not_found<T: Into<String>>(resource: T) -> Self {
         Self::NotFound {

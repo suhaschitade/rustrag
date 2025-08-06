@@ -1,6 +1,8 @@
-use crate::models::DocumentChunk;
+use crate::models::{Document, DocumentChunk, DocumentMetadata};
 use crate::utils::Result;
+use crate::core::{ContentValidator, MetadataExtractor, ValidationConfig};
 use regex::Regex;
+use std::path::Path;
 
 /// Different strategies for chunking text documents
 #[derive(Debug, Clone, Copy)]
@@ -198,5 +200,278 @@ impl DocumentProcessor {
         }
 
         Ok(chunks)
+    }
+
+    /// Process a document file and extract both content and metadata
+    pub async fn process_document_file(
+        &self,
+        file_path: &Path,
+        title: Option<String>,
+        strategy: ChunkingStrategy,
+    ) -> Result<(Document, Vec<DocumentChunk>)> {
+        // Extract metadata from file
+        let metadata = MetadataExtractor::extract_from_file(file_path).await?;
+        
+        // Read file content (this would normally use DocumentFormatProcessor)
+        let content = std::fs::read_to_string(file_path)
+            .map_err(|e| crate::utils::Error::document_processing(
+                format!("Failed to read file: {}", e)
+            ))?;
+
+        // Extract additional metadata from content
+        let file_extension = file_path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .map(|s| s.to_lowercase());
+        
+        let content_metadata = MetadataExtractor::extract_from_content(
+            &content, 
+            file_extension.as_deref()
+        )?;
+
+        // Merge metadata (file metadata takes precedence)
+        let merged_metadata = self.merge_metadata(metadata, content_metadata);
+
+        // Determine document title
+        let doc_title = title
+            .or_else(|| {
+                // Try to get title from metadata
+                if let Ok(custom_map) = serde_json::from_value::<serde_json::Map<String, serde_json::Value>>(merged_metadata.custom_fields.clone()) {
+                    custom_map.get("title")
+                        .or_else(|| custom_map.get("pdf_title"))
+                        .or_else(|| custom_map.get("html_title"))
+                        .or_else(|| custom_map.get("inferred_title"))
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string())
+                } else {
+                    None
+                }
+            })
+            .or_else(|| {
+                // Fallback to filename
+                file_path.file_stem()
+                    .and_then(|stem| stem.to_str())
+                    .map(|s| s.to_string())
+            })
+            .unwrap_or_else(|| "Untitled Document".to_string());
+
+        // Create document with metadata
+        let mut document = Document::new_with_metadata(doc_title, content.clone(), merged_metadata);
+        
+        // Set file-related fields
+        document.file_path = Some(file_path.to_string_lossy().to_string());
+        if let Some(ext) = file_extension {
+            document.file_type = Some(ext);
+        }
+        if let Ok(file_metadata) = std::fs::metadata(file_path) {
+            document.file_size = Some(file_metadata.len() as i64);
+        }
+
+        // Generate chunks
+        let chunks = self.chunk_text_with_strategy(&document.id, &content, strategy)?;
+
+        Ok((document, chunks))
+    }
+
+    /// Process document content with metadata extraction
+    pub fn process_document_content(
+        &self,
+        title: String,
+        content: String,
+        file_type: Option<&str>,
+        strategy: ChunkingStrategy,
+    ) -> Result<(Document, Vec<DocumentChunk>)> {
+        // Extract metadata from content
+        let metadata = MetadataExtractor::extract_from_content(&content, file_type)?;
+
+        // Create document with metadata
+        let document = Document::new_with_metadata(title, content.clone(), metadata);
+
+        // Generate chunks
+        let chunks = self.chunk_text_with_strategy(&document.id, &content, strategy)?;
+
+        Ok((document, chunks))
+    }
+
+    /// Merge two DocumentMetadata structs, with priority given to the first one
+    fn merge_metadata(&self, primary: DocumentMetadata, secondary: DocumentMetadata) -> DocumentMetadata {
+        DocumentMetadata {
+            author: primary.author.or(secondary.author),
+            created_date: primary.created_date.or(secondary.created_date),
+            modified_date: primary.modified_date.or(secondary.modified_date),
+            language: primary.language.or(secondary.language),
+            tags: if primary.tags.is_empty() { secondary.tags } else { primary.tags },
+            category: primary.category.or(secondary.category),
+            word_count: primary.word_count.or(secondary.word_count),
+            page_count: primary.page_count.or(secondary.page_count),
+            file_type: primary.file_type.or(secondary.file_type),
+            file_size: primary.file_size.or(secondary.file_size),
+            custom_fields: self.merge_custom_fields(primary.custom_fields, secondary.custom_fields),
+        }
+    }
+
+    /// Merge custom fields JSON objects
+    fn merge_custom_fields(
+        &self,
+        primary: serde_json::Value,
+        secondary: serde_json::Value,
+    ) -> serde_json::Value {
+        match (primary, secondary) {
+            (serde_json::Value::Object(mut primary_map), serde_json::Value::Object(secondary_map)) => {
+                // Add fields from secondary that don't exist in primary
+                for (key, value) in secondary_map {
+                    primary_map.entry(key).or_insert(value);
+                }
+                serde_json::Value::Object(primary_map)
+            }
+            (primary, _) if !primary.is_null() => primary,
+            (_, secondary) => secondary,
+        }
+    }
+
+    /// Process document with validation and sanitization
+    pub async fn process_document_with_validation(
+        &self,
+        content: String,
+        title: String,
+        file_type: Option<&str>,
+        strategy: ChunkingStrategy,
+        validation_config: Option<ValidationConfig>,
+    ) -> Result<(Document, Vec<DocumentChunk>, crate::core::ValidationResult)> {
+        // Create content validator
+        let validator = if let Some(config) = validation_config {
+            ContentValidator::with_config(config)?
+        } else {
+            ContentValidator::new()?
+        };
+
+        // Validate and sanitize content
+        let validation_result = validator.validate_and_sanitize(&content, file_type)?;
+
+        // Use sanitized content if validation passed
+        let processed_content = if let Some(sanitized) = &validation_result.sanitized_content {
+            sanitized.clone()
+        } else {
+            // If validation failed completely, we still might want to process with original content
+            // This depends on business requirements - here we allow it with warnings
+            content.clone()
+        };
+
+        // Process the content normally
+        let (document, chunks) = self.process_document_content(
+            title,
+            processed_content,
+            file_type,
+            strategy,
+        )?;
+
+        Ok((document, chunks, validation_result))
+    }
+
+    /// Process file with validation and sanitization
+    pub async fn process_file_with_validation(
+        &self,
+        file_path: &Path,
+        title: Option<String>,
+        strategy: ChunkingStrategy,
+        validation_config: Option<ValidationConfig>,
+    ) -> Result<(Document, Vec<DocumentChunk>, crate::core::ValidationResult)> {
+        // Read file content first
+        let content = std::fs::read_to_string(file_path)
+            .map_err(|e| crate::utils::Error::document_processing(
+                format!("Failed to read file: {}", e)
+            ))?;
+
+        // Get file type
+        let file_type = file_path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .map(|s| s.to_lowercase());
+
+        // Create content validator
+        let validator = if let Some(config) = validation_config {
+            ContentValidator::with_config(config)?
+        } else {
+            ContentValidator::new()?
+        };
+
+        // Validate and sanitize content
+        let validation_result = validator.validate_and_sanitize(&content, file_type.as_deref())?;
+
+        // Use sanitized content if available
+        let processed_content = if let Some(sanitized) = &validation_result.sanitized_content {
+            sanitized.clone()
+        } else {
+            content.clone()
+        };
+
+        // Extract metadata from original file
+        let metadata = MetadataExtractor::extract_from_file(file_path).await?;
+        
+        // Extract additional metadata from processed content
+        let content_metadata = MetadataExtractor::extract_from_content(
+            &processed_content, 
+            file_type.as_deref()
+        )?;
+
+        // Merge metadata
+        let merged_metadata = self.merge_metadata(metadata, content_metadata);
+
+        // Determine document title
+        let doc_title = title
+            .or_else(|| {
+                // Try to get title from metadata
+                if let Ok(custom_map) = serde_json::from_value::<serde_json::Map<String, serde_json::Value>>(merged_metadata.custom_fields.clone()) {
+                    custom_map.get("title")
+                        .or_else(|| custom_map.get("pdf_title"))
+                        .or_else(|| custom_map.get("html_title"))
+                        .or_else(|| custom_map.get("inferred_title"))
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string())
+                } else {
+                    None
+                }
+            })
+            .or_else(|| {
+                // Fallback to filename
+                file_path.file_stem()
+                    .and_then(|stem| stem.to_str())
+                    .map(|s| s.to_string())
+            })
+            .unwrap_or_else(|| "Untitled Document".to_string());
+
+        // Create document with metadata
+        let mut document = Document::new_with_metadata(doc_title, processed_content.clone(), merged_metadata);
+        
+        // Set file-related fields
+        document.file_path = Some(file_path.to_string_lossy().to_string());
+        if let Some(ext) = file_type {
+            document.file_type = Some(ext);
+        }
+        if let Ok(file_metadata) = std::fs::metadata(file_path) {
+            document.file_size = Some(file_metadata.len() as i64);
+        }
+
+        // Generate chunks from processed content
+        let chunks = self.chunk_text_with_strategy(&document.id, &processed_content, strategy)?;
+
+        Ok((document, chunks, validation_result))
+    }
+
+    /// Quick validation check for content before processing
+    pub fn quick_validate_content(&self, content: &str, file_type: Option<&str>) -> Result<bool> {
+        let validator = ContentValidator::new()?;
+        validator.quick_validate(content, file_type)
+    }
+
+    /// Get validation statistics for a batch of documents
+    pub fn batch_validate_documents(&self, documents: &[(String, Option<String>)]) -> Result<crate::core::content_validator::BatchValidationStats> {
+        let validator = ContentValidator::new()?;
+        let contents: Vec<(&str, Option<&str>)> = documents
+            .iter()
+            .map(|(content, file_type)| (content.as_str(), file_type.as_deref()))
+            .collect();
+        
+        validator.batch_validate_stats(&contents)
     }
 }
