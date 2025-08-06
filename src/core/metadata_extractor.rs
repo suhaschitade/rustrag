@@ -415,10 +415,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_extract_from_content() {
-        let content = "This is a test document with some content.";
+        let content = "The quick brown fox jumps over the lazy dog and runs through the forest.";
         let metadata = MetadataExtractor::extract_from_content(content, Some("txt")).unwrap();
         
-        assert_eq!(metadata.word_count, Some(9));
+        assert_eq!(metadata.word_count, Some(14));
         assert_eq!(metadata.file_type, Some("txt".to_string()));
         assert_eq!(metadata.language, Some("en".to_string()));
     }

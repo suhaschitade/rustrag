@@ -1,10 +1,9 @@
 use rustrag::core::{DocumentProcessor, ContentValidator, ValidationConfig, ChunkingStrategy};
-use std::collections::HashSet;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize logging
-    tracing_subscriber::init();
+    tracing_subscriber::fmt::init();
 
     println!("🛡️  RustRAG Content Validation & Sanitization Demo");
     println!("=================================================\n");
@@ -183,7 +182,7 @@ async fn demo_custom_validation() -> Result<(), Box<dyn std::error::Error>> {
     println!("------------------------------------------");
 
     // Create a custom validation configuration
-    let mut custom_config = ValidationConfig {
+    let custom_config = ValidationConfig {
         max_document_size: 5000,  // Smaller limit
         min_document_size: 5,     // More lenient minimum
         allow_empty_content: true, // Allow empty content

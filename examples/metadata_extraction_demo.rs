@@ -1,11 +1,10 @@
 use rustrag::core::{DocumentProcessor, MetadataExtractor, ChunkingStrategy};
 use rustrag::models::DocumentMetadata;
-use std::path::Path;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize logging
-    tracing_subscriber::init();
+    tracing_subscriber::fmt::init();
 
     println!("🔍 RustRAG Metadata Extraction Demo");
     println!("=====================================\n");
