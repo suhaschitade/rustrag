@@ -1,5 +1,5 @@
 use crate::models::{Query, QueryResponse, DocumentChunk, RetrievedChunk};
-use crate::utils::{Error, Result};
+use crate::utils::Result;
 
 /// Generation service for creating responses using LLMs
 pub struct GenerationService {
@@ -64,23 +64,6 @@ impl GenerationService {
         ))
     }
 
-    /// Build context from retrieved chunks
-    fn build_context(&self, chunks: &[RetrievedChunk]) -> String {
-        chunks
-            .iter()
-            .enumerate()
-            .map(|(i, chunk)| {
-                format!(
-                    "Context {}: {}\n(Source: {}, Similarity: {:.2})\n",
-                    i + 1,
-                    chunk.content,
-                    chunk.document_title,
-                    chunk.similarity_score
-                )
-            })
-            .collect::<Vec<_>>()
-            .join("\n")
-    }
 }
 
 impl Default for GenerationService {

@@ -1,5 +1,5 @@
 use crate::models::DocumentChunk;
-use crate::utils::{Error, Result};
+use crate::utils::Result;
 
 /// Embedding service for generating vector embeddings
 pub struct EmbeddingService {

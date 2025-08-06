@@ -1,14 +1,26 @@
-use crate::models::{Document, DocumentChunk, DocumentMetadata};
-use crate::utils::{Error, Result};
+use crate::models::DocumentChunk;
+use crate::utils::Result;
+use regex::Regex;
 
-/// Document processing service for parsing and chunking documents
+/// Different strategies for chunking text documents
+#[derive(Debug, Clone, Copy)]
+pub enum ChunkingStrategy {
+    /// Fixed-size chunking with overlap
+    FixedSize,
+    /// Semantic chunking based on document structure
+    Semantic,
+    /// Sentence-based chunking
+    Sentence,
+    /// Paragraph-based chunking
+    Paragraph,
+}
+
 pub struct DocumentProcessor {
     chunk_size: usize,
     chunk_overlap: usize,
 }
 
 impl DocumentProcessor {
-    /// Create a new document processor with default settings
     pub fn new() -> Self {
         Self {
             chunk_size: 1000,
@@ -16,7 +28,6 @@ impl DocumentProcessor {
         }
     }
 
-    /// Create a new document processor with custom settings
     pub fn new_with_config(chunk_size: usize, chunk_overlap: usize) -> Self {
         Self {
             chunk_size,
@@ -24,45 +35,23 @@ impl DocumentProcessor {
         }
     }
 
-    /// Process a text document into chunks
-    pub async fn process_text_document(
+    /// Chunk text with a specific strategy
+    pub fn chunk_text_with_strategy(
         &self,
-        title: String,
-        content: String,
-        metadata: Option<DocumentMetadata>,
-    ) -> Result<(Document, Vec<DocumentChunk>)> {
-        let document = match metadata {
-            Some(meta) => Document::new_with_metadata(title, content.clone(), meta),
-            None => Document::new(title, content.clone()),
-        };
-
-        let chunks = self.chunk_text(&document.id, &content)?;
-
-        Ok((document, chunks))
+        document_id: &uuid::Uuid,
+        text: &str,
+        strategy: ChunkingStrategy,
+    ) -> Result<Vec<DocumentChunk>> {
+        match strategy {
+            ChunkingStrategy::FixedSize => self.chunk_text_fixed_size(document_id, text),
+            ChunkingStrategy::Semantic => self.chunk_text_semantic(document_id, text),
+            ChunkingStrategy::Sentence => self.chunk_text_by_sentences(document_id, text),
+            ChunkingStrategy::Paragraph => self.chunk_text_by_paragraphs(document_id, text),
+        }
     }
 
-    /// Process a PDF document (placeholder implementation)
-    pub async fn process_pdf_document(
-        &self,
-        file_path: &str,
-        _data: &[u8],
-    ) -> Result<(Document, Vec<DocumentChunk>)> {
-        // TODO: Implement PDF processing using pdf-extract or lopdf
-        let title = std::path::Path::new(file_path)
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("Unknown")
-            .to_string();
-
-        let content = "PDF processing not yet implemented".to_string();
-        let document = Document::new(title, content.clone());
-        let chunks = self.chunk_text(&document.id, &content)?;
-
-        Ok((document, chunks))
-    }
-
-    /// Chunk text into smaller pieces
-    fn chunk_text(&self, document_id: &uuid::Uuid, text: &str) -> Result<Vec<DocumentChunk>> {
+    /// Fixed-size chunking with overlap
+    pub fn chunk_text_fixed_size(&self, document_id: &uuid::Uuid, text: &str) -> Result<Vec<DocumentChunk>> {
         let mut chunks = Vec::new();
         let mut start = 0;
         let mut chunk_index = 0;
@@ -87,20 +76,127 @@ impl DocumentProcessor {
         Ok(chunks)
     }
 
-    /// Extract metadata from document content (basic implementation)
-    pub fn extract_metadata(&self, content: &str) -> DocumentMetadata {
-        let word_count = content.split_whitespace().count() as u32;
-
-        DocumentMetadata {
-            word_count: Some(word_count),
-            language: Some("en".to_string()), // Default to English
-            ..Default::default()
+    /// Semantic chunking based on document structure
+    pub fn chunk_text_semantic(&self, document_id: &uuid::Uuid, text: &str) -> Result<Vec<DocumentChunk>> {
+        let section_regex = Regex::new(r"(?m)^(#{1,6}\s+.+|\d+\.\s+.+|[A-Z][A-Z\s]+:)")
+            .map_err(|e| crate::utils::Error::document_processing(format!("Regex error: {}", e)))?;
+        let mut chunks = Vec::new();
+        let mut chunk_index = 0;
+        let mut last_end = 0;
+        let mut current_section = String::new();
+        
+        for mat in section_regex.find_iter(text) {
+            if !current_section.trim().is_empty() {
+                let chunk = DocumentChunk::new(*document_id, chunk_index, current_section.trim().to_string());
+                chunks.push(chunk);
+                chunk_index += 1;
+            }
+            current_section = text[last_end..mat.start()].to_string();
+            current_section.push_str(&text[mat.start()..mat.end()]);
+            last_end = mat.end();
         }
+        
+        if !current_section.trim().is_empty() {
+            let chunk = DocumentChunk::new(*document_id, chunk_index, current_section.trim().to_string());
+            chunks.push(chunk);
+        }
+        
+        // Fallback to paragraph chunking if no sections found
+        if chunks.is_empty() {
+            return self.chunk_text_by_paragraphs(document_id, text);
+        }
+        
+        Ok(chunks)
     }
-}
 
-impl Default for DocumentProcessor {
-    fn default() -> Self {
-        Self::new()
+    /// Sentence-based chunking
+    pub fn chunk_text_by_sentences(&self, document_id: &uuid::Uuid, text: &str) -> Result<Vec<DocumentChunk>> {
+        let mut chunks = Vec::new();
+        let mut chunk_index = 0;
+        let mut current_chunk = String::new();
+        let mut current_size = 0;
+
+        // Simple sentence boundary detection
+        let sentence_regex = Regex::new(r"[.!?]+\s+")
+            .map_err(|e| crate::utils::Error::document_processing(format!("Regex error: {}", e)))?;
+
+        let mut last_end = 0;
+        for mat in sentence_regex.find_iter(text) {
+            let sentence = &text[last_end..mat.end()];
+            
+            // Check if adding this sentence would exceed chunk size
+            if current_size + sentence.len() > self.chunk_size && !current_chunk.is_empty() {
+                let chunk = DocumentChunk::new(*document_id, chunk_index, current_chunk.trim().to_string());
+                chunks.push(chunk);
+                chunk_index += 1;
+                current_chunk.clear();
+                current_size = 0;
+            }
+
+            current_chunk.push_str(sentence);
+            current_size += sentence.len();
+            last_end = mat.end();
+        }
+
+        // Add remaining text as final chunk
+        if last_end < text.len() {
+            current_chunk.push_str(&text[last_end..]);
+        }
+
+        if !current_chunk.trim().is_empty() {
+            let chunk = DocumentChunk::new(*document_id, chunk_index, current_chunk.trim().to_string());
+            chunks.push(chunk);
+        }
+
+        // Fallback to fixed-size if no sentences found
+        if chunks.is_empty() {
+            return self.chunk_text_fixed_size(document_id, text);
+        }
+
+        Ok(chunks)
+    }
+
+    /// Paragraph-based chunking
+    pub fn chunk_text_by_paragraphs(&self, document_id: &uuid::Uuid, text: &str) -> Result<Vec<DocumentChunk>> {
+        let mut chunks = Vec::new();
+        let mut chunk_index = 0;
+        let mut current_chunk = String::new();
+        let mut current_size = 0;
+
+        for paragraph in text.split("\n\n") {
+            let paragraph = paragraph.trim();
+            if paragraph.is_empty() {
+                continue;
+            }
+
+            // Check if adding this paragraph would exceed chunk size
+            if current_size + paragraph.len() > self.chunk_size && !current_chunk.is_empty() {
+                let chunk = DocumentChunk::new(*document_id, chunk_index, current_chunk.trim().to_string());
+                chunks.push(chunk);
+                chunk_index += 1;
+                current_chunk.clear();
+                current_size = 0;
+            }
+
+            if !current_chunk.is_empty() {
+                current_chunk.push_str("\n\n");
+                current_size += 2;
+            }
+            current_chunk.push_str(paragraph);
+            current_size += paragraph.len();
+        }
+
+        // Add final chunk
+        if !current_chunk.trim().is_empty() {
+            let chunk = DocumentChunk::new(*document_id, chunk_index, current_chunk.trim().to_string());
+            chunks.push(chunk);
+        }
+
+        // Fallback to fixed-size if no paragraphs found
+        if chunks.is_empty() {
+            return self.chunk_text_fixed_size(document_id, text);
+        }
+
+        Ok(chunks)
     }
 }

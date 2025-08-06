@@ -1,5 +1,5 @@
 use axum::{
-    routing::{get, post, delete},
+    routing::{get, post},
     Router, Server,
 };
 use rustrag::{

@@ -48,6 +48,21 @@ async-trait = "0.1"
 config = "0.13"
 dotenvy = "0.15"
 
+# Document Processing
+lopdf = "0.32"
+pdf-extract = "0.7"
+docx-rs = "0.4"
+markdown = "1.0"
+encoding_rs = "0.8"
+chardet = "0.2"
+mime_guess = "2.0"
+
+# Text Processing & NLP
+regex = "1.0"
+scraper = "0.17"  # For HTML content extraction (correct name)
+pulldown-cmark = "0.9"  # For Markdown processing
+tokenizers = { version = "0.15", optional = true }
+
 # CLI (for main binary)
 clap = { version = "4.0", features = ["derive", "env"], optional = true }
 

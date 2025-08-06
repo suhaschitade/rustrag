@@ -1,5 +1,5 @@
 use crate::models::{Query, DocumentChunk};
-use crate::utils::{Error, Result};
+use crate::utils::Result;
 
 /// Retrieval service for finding relevant document chunks
 pub struct RetrievalService {

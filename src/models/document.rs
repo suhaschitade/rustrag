@@ -39,6 +39,8 @@ pub struct DocumentMetadata {
     pub category: Option<String>,
     pub word_count: Option<u32>,
     pub page_count: Option<u32>,
+    pub file_type: Option<String>,
+    pub file_size: Option<u64>,
     pub custom_fields: serde_json::Value,
 }
 

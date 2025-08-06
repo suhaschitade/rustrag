@@ -179,3 +179,4 @@ wheels/
 
 # Project specific
 migrations/
+vs_buildtools.exe
