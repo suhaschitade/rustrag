@@ -30,6 +30,7 @@ use super::{
     health::*,
     documents::*,
     queries,
+    query_expansion::{create_query_expansion_router, QueryExpansionState},
 };
 
 /// Build the main API router with all endpoints and middleware
@@ -88,6 +89,12 @@ pub fn create_api_router() -> Router {
         .route("/queries", get(queries::list_query_history))
         .layer(middleware::from_fn_with_state(api_key_store.clone(), auth_middleware));
 
+    // Query expansion and refinement endpoints
+    let query_expansion_state = QueryExpansionState::new();
+    let query_expansion_router = create_query_expansion_router()
+        .with_state(query_expansion_state)
+        .layer(middleware::from_fn_with_state(api_key_store.clone(), auth_middleware));
+
     // Admin endpoints (require special permissions)
     let admin_router = Router::new()
         .route("/admin/stats", get(get_system_stats))
@@ -103,6 +110,7 @@ pub fn create_api_router() -> Router {
         .merge(rate_limit_router)
         .merge(documents_router)
         .merge(queries_router)
+        .nest("/query-expansion", query_expansion_router)
         .merge(admin_router);
 
     // Main router with middleware stack
@@ -150,6 +158,7 @@ async fn api_info() -> axum::Json<serde_json::Value> {
         "endpoints": {
             "documents": "/api/v1/documents",
             "queries": "/api/v1/query",
+            "query_expansion": "/api/v1/query-expansion",
             "admin": "/api/v1/admin"
         },
         "authentication": "API Key required (X-API-Key header or Authorization: Bearer <token>)"

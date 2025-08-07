@@ -42,6 +42,9 @@ pub enum Error {
 
     #[error("External service error: {service}: {message}")]
     ExternalService { service: String, message: String },
+
+    #[error("Search error: {message}")]
+    Search { message: String },
 }
 
 impl Error {
@@ -121,6 +124,13 @@ impl Error {
     pub fn external_service<T: Into<String>, U: Into<String>>(service: T, message: U) -> Self {
         Self::ExternalService {
             service: service.into(),
+            message: message.into(),
+        }
+    }
+
+    /// Create a new search error
+    pub fn search<T: Into<String>>(message: T) -> Self {
+        Self::Search {
             message: message.into(),
         }
     }

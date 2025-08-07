@@ -2,6 +2,7 @@
 pub mod documents;
 pub mod health;
 pub mod queries;
+pub mod query_expansion;
 pub mod middleware;
 pub mod error_handler;
 pub mod types;
@@ -13,6 +14,7 @@ pub mod rate_limiter;
 pub use documents::*;
 pub use health::*;
 pub use queries::*;
+pub use query_expansion::*;
 pub use middleware::*;
 pub use error_handler::*;
 pub use types::*;

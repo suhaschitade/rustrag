@@ -1,6 +1,6 @@
 use crate::models::{Document, DocumentChunk, DocumentMetadata};
 use crate::utils::Result;
-use crate::core::{ContentValidator, MetadataExtractor, ValidationConfig};
+use crate::core::{ContentValidator, ValidationConfig};
 use regex::Regex;
 use std::path::Path;
 
@@ -209,8 +209,8 @@ impl DocumentProcessor {
         title: Option<String>,
         strategy: ChunkingStrategy,
     ) -> Result<(Document, Vec<DocumentChunk>)> {
-        // Extract metadata from file
-        let metadata = MetadataExtractor::extract_from_file(file_path).await?;
+        // TODO: Extract metadata from file when MetadataExtractor is implemented
+        let metadata = DocumentMetadata::default();
         
         // Read file content (this would normally use DocumentFormatProcessor)
         let content = std::fs::read_to_string(file_path)
@@ -224,10 +224,8 @@ impl DocumentProcessor {
             .and_then(|ext| ext.to_str())
             .map(|s| s.to_lowercase());
         
-        let content_metadata = MetadataExtractor::extract_from_content(
-            &content, 
-            file_extension.as_deref()
-        )?;
+        // TODO: Extract content metadata when MetadataExtractor is implemented
+        let content_metadata = DocumentMetadata::default();
 
         // Merge metadata (file metadata takes precedence)
         let merged_metadata = self.merge_metadata(metadata, content_metadata);
@@ -281,8 +279,8 @@ impl DocumentProcessor {
         file_type: Option<&str>,
         strategy: ChunkingStrategy,
     ) -> Result<(Document, Vec<DocumentChunk>)> {
-        // Extract metadata from content
-        let metadata = MetadataExtractor::extract_from_content(&content, file_type)?;
+        // TODO: Extract metadata from content when MetadataExtractor is implemented
+        let metadata = DocumentMetadata::default();
 
         // Create document with metadata
         let document = Document::new_with_metadata(title, content.clone(), metadata);
@@ -405,14 +403,11 @@ impl DocumentProcessor {
             content.clone()
         };
 
-        // Extract metadata from original file
-        let metadata = MetadataExtractor::extract_from_file(file_path).await?;
+        // TODO: Extract metadata from file when MetadataExtractor is implemented
+        let metadata = DocumentMetadata::default();
         
-        // Extract additional metadata from processed content
-        let content_metadata = MetadataExtractor::extract_from_content(
-            &processed_content, 
-            file_type.as_deref()
-        )?;
+        // TODO: Extract content metadata when MetadataExtractor is implemented
+        let content_metadata = DocumentMetadata::default();
 
         // Merge metadata
         let merged_metadata = self.merge_metadata(metadata, content_metadata);

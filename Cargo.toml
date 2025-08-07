@@ -94,6 +94,7 @@ rstest = "0.18"
 mockall = "0.12"
 wiremock = "0.5"
 tempfile = "3.8"
+axum-test = "18.0.0-rc3"
 
 [features]
 default = ["web-server", "embeddings-mock"]

@@ -1,7 +1,9 @@
 use crate::models::{Query, QueryOptions};
+use crate::core::query_expansion::{QueryExpansionService, QueryExpansionConfig, ExpansionResult};
 use crate::utils::{Error, Result};
 use regex::Regex;
 use std::collections::HashSet;
+use std::sync::Arc;
 
 /// Query processing and validation service
 pub struct QueryProcessor {

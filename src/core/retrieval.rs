@@ -1,8 +1,12 @@
 use crate::models::{Query, DocumentChunk};
-use crate::core::{EmbeddingService, SimilaritySearchEngine, SearchConfig, SearchFilters};
+use crate::core::{
+    EmbeddingService, SimilaritySearchEngine, SearchConfig, SearchFilters,
+    HybridSearchScorer, HybridSearchConfig, build_document_stats
+};
 use crate::storage::VectorStore;
 use crate::utils::{Error, Result};
 use std::sync::Arc;
+use tracing;
 
 /// Configuration for retrieval service
 #[derive(Debug, Clone)]
@@ -86,7 +90,7 @@ impl RetrievalService {
         embedding_service: Arc<EmbeddingService>,
         vector_store: Arc<dyn VectorStore + Send + Sync>,
     ) -> Self {
-        let search_config = SearchConfig {
+        let _search_config = SearchConfig {
             similarity_threshold: config.default_similarity_threshold,
             max_results: config.default_max_chunks,
             ..Default::default()
@@ -259,49 +263,32 @@ impl RetrievalService {
         chunks: Vec<DocumentChunk>,
         query_embedding: &[f32],
     ) -> Result<Vec<RankedChunk>> {
-        let mut ranked_chunks = Vec::new();
-        let query_terms: Vec<String> = query.text
-            .to_lowercase()
-            .split_whitespace()
-            .map(|s| s.to_string())
-            .collect();
-
-        for chunk in chunks {
-            // Calculate vector similarity
-            let similarity_score = if let Some(embedding) = &chunk.embedding {
-                self.calculate_similarity(query_embedding, embedding)
-            } else {
-                0.0
-            };
-
-            // Calculate keyword matching score
-            let keyword_score = self.calculate_keyword_score(&query_terms, &chunk.content);
-
-            // Combine scores
-            let combined_score = (similarity_score * self.config.vector_weight) +
-                               (keyword_score * self.config.keyword_weight);
-
-            let explanation = format!(
-                "Vector: {:.3} ({:.1}%), Keyword: {:.3} ({:.1}%), Combined: {:.3}",
-                similarity_score,
-                self.config.vector_weight * 100.0,
-                keyword_score,
-                self.config.keyword_weight * 100.0,
-                combined_score
-            );
-
-            ranked_chunks.push(RankedChunk {
-                chunk,
-                similarity_score,
-                keyword_score,
-                combined_score,
-                rank: 0, // Will be set later
-                relevance_explanation: explanation,
-            });
-        }
-
-        // Sort by combined score
-        ranked_chunks.sort_by(|a, b| b.combined_score.partial_cmp(&a.combined_score).unwrap());
+        // Build document statistics for hybrid search
+        let stats = build_document_stats(&chunks).await;
+        
+        // Create hybrid search configuration
+        let hybrid_config = HybridSearchConfig {
+            vector_weight: self.config.vector_weight,
+            keyword_weight: self.config.keyword_weight,
+            ..Default::default()
+        };
+        
+        // Create the hybrid search scorer
+        let scorer = HybridSearchScorer::new(hybrid_config, Arc::new(stats));
+        
+        // Perform hybrid search
+        let hybrid_results = scorer.search_chunks(query, &chunks, query_embedding).await
+            .map_err(|e| Error::search(format!("Hybrid search failed: {}", e)))?;
+        
+        // Convert hybrid search results to RankedChunk format
+        let ranked_chunks = hybrid_results.into_iter().map(|res| RankedChunk {
+            chunk: res.chunk,
+            similarity_score: res.vector_score,
+            keyword_score: res.keyword_score,
+            combined_score: res.hybrid_score,
+            rank: 0, // Will be set later
+            relevance_explanation: res.explanation,
+        }).collect();
 
         Ok(ranked_chunks)
     }

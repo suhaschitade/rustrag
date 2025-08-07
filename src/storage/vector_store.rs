@@ -412,6 +412,36 @@ impl InMemoryVectorStore {
         }
     }
     
+    /// Insert a single chunk for testing convenience
+    pub async fn insert_chunk(
+        &self,
+        chunk_id: Uuid,
+        document_id: Uuid,
+        embedding: Vec<f32>,
+        content: String,
+        chunk_index: i32,
+        metadata: serde_json::Value,
+    ) -> Result<()> {
+        let vector = InMemoryVector {
+            id: chunk_id,
+            embedding,
+            metadata: serde_json::json!({
+                "chunk_id": chunk_id,
+                "document_id": document_id,
+                "content": content,
+                "chunk_index": chunk_index,
+                "created_at": chrono::Utc::now().to_rfc3339(),
+                "metadata": metadata
+            }),
+        };
+        
+        let mut vectors = self.vectors.write().unwrap();
+        vectors.insert(chunk_id, vector);
+        
+        tracing::info!("InMemory: Inserted chunk: {}", chunk_id);
+        Ok(())
+    }
+    
     fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
         if a.len() != b.len() {
             return 0.0;
