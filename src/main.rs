@@ -1,14 +1,9 @@
-use axum::{
-    routing::{get, post},
-    Router, Server,
-};
 use rustrag::{
-    api::{health_check, create_document, get_document, list_documents, delete_document, process_query},
+    api::{router::create_api_router, documents::ensure_uploads_directory},
     utils::logging,
 };
 use std::net::SocketAddr;
-use tower::ServiceBuilder;
-use tower_http::cors::CorsLayer;
+use tokio::net::TcpListener;
 use tracing::info;
 
 #[tokio::main]
@@ -20,17 +15,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     logging::init_tracing().map_err(|e| format!("Failed to initialize logging: {}", e))?;
 
     info!("Starting RustRAG server v{}", rustrag::VERSION);
+    info!("Initializing upload infrastructure...");
+    
+    // Initialize upload directory
+    ensure_uploads_directory().await
+        .map_err(|e| format!("Failed to initialize uploads directory: {}", e))?;
+    
+    info!("Building API router with comprehensive middleware stack...");
 
-    // Build the application router
-    let app = Router::new()
-        .route("/health", get(health_check))
-        .route("/documents", post(create_document).get(list_documents))
-        .route("/documents/:id", get(get_document).delete(delete_document))
-        .route("/query", post(process_query))
-        .layer(
-            ServiceBuilder::new()
-                .layer(CorsLayer::permissive())
-        );
+    // Build the comprehensive application router
+    let app = create_api_router();
 
     // Server configuration
     let host = std::env::var("SERVER_HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
@@ -40,12 +34,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or(8000);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
-    info!("Server listening on {}:{}", host, port);
-
+    info!("Server configured to listen on {}:{}", host, port);
+    
+    // Create listener
+    let listener = TcpListener::bind(&addr).await?;
+    info!("Server successfully bound to {}", addr);
+    
+    info!("🚀 RustRAG API Server is ready!");
+    info!("📋 Available endpoints:");
+    info!("   • GET  /                    - API information");
+    info!("   • GET  /api/v1/health       - Basic health check");
+    info!("   • GET  /api/v1/health/detailed - Detailed health check");
+    info!("   • POST /api/v1/documents    - Upload documents");
+    info!("   • GET  /api/v1/documents    - List documents");
+    info!("   • POST /api/v1/query        - Process queries");
+    info!("   • GET  /api/v1/admin/*      - Admin endpoints");
+    info!("🔐 Authentication: API Key required (except /health)");
+    
     // Start the server
-    Server::bind(&addr)
-        .serve(app.into_make_service())
-        .await?;
+    axum::serve(listener, app).await?;
 
     Ok(())
 }

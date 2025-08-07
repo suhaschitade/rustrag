@@ -18,10 +18,10 @@ members = [
 
 [dependencies]
 # Web Framework & HTTP
-axum = { version = "0.6", features = ["multipart"], optional = true }
+axum = { version = "0.7", features = ["multipart", "ws"], optional = true }
 tower = { version = "0.4", optional = true }
-tower-http = { version = "0.4", features = ["fs", "cors", "trace"], optional = true }
-hyper = { version = "0.14", features = ["full"], optional = true }
+tower-http = { version = "0.5", features = ["fs", "cors", "trace", "timeout"], optional = true }
+axum-extra = { version = "0.9", features = ["typed-header"], optional = true }
 
 # Async Runtime
 tokio = { version = "1.28", features = ["full"] }
