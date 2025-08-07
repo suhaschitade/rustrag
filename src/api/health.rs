@@ -2,7 +2,7 @@ use axum::{response::Json, http::StatusCode};
 use std::time::Instant;
 use tracing::{info, warn};
 
-use crate::api::{ApiResponse, HealthResponse, ServiceHealthStatus, ServiceStatus};
+use crate::api::types::{ApiResponse, HealthResponse, ServiceHealthStatus, ServiceStatus};
 
 /// Basic health check endpoint
 pub async fn health_check() -> Json<ApiResponse<String>> {

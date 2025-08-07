@@ -19,6 +19,7 @@ members = [
 [dependencies]
 # Web Framework & HTTP
 axum = { version = "0.7", features = ["multipart", "ws"], optional = true }
+axum-server = { version = "0.6", features = ["tls-rustls"], optional = true }
 tower = { version = "0.4", optional = true }
 tower-http = { version = "0.5", features = ["fs", "cors", "trace", "timeout"], optional = true }
 axum-extra = { version = "0.9", features = ["typed-header"], optional = true }
@@ -72,6 +73,18 @@ pulldown-cmark = "0.9"  # For Markdown processing
 # HTTP Client for external APIs
 reqwest = { version = "0.11", features = ["json", "stream"] }
 
+# Cache and Database
+redis = { version = "0.24", features = ["tokio-comp", "connection-manager"], optional = true }
+sqlx = { version = "0.7", features = ["postgres", "uuid", "chrono", "runtime-tokio-rustls"], optional = true }
+deadpool-postgres = { version = "0.12", optional = true }
+deadpool-redis = { version = "0.14", optional = true }
+
+# Metrics and Monitoring
+metrics = { version = "0.22", optional = true }
+metrics-exporter-prometheus = { version = "0.13", optional = true }
+once_cell = "1.19"
+flate2 = "1.0"
+
 # Embedding Providers
 # OpenAI API client (maintained alternative)
 async-openai = { version = "0.21", optional = true }
@@ -85,6 +98,14 @@ base64 = "0.22"
 # SHA256 hashing for API keys
 sha256 = "1.4"
 
+# TLS and Certificate Handling
+x509-parser = "0.15"
+pem = "3.0"
+
+# Security and Cryptography
+aes-gcm = { version = "0.10", optional = true }
+rand = { version = "0.8", optional = true }
+
 # CLI (for main binary)
 clap = { version = "4.0", features = ["derive", "env"], optional = true }
 
@@ -97,9 +118,12 @@ tempfile = "3.8"
 axum-test = "18.0.0-rc3"
 
 [features]
-default = ["web-server", "embeddings-mock"]
-web-server = ["axum", "tower", "tower-http"]
+default = ["web-server", "embeddings-mock", "performance"]
+web-server = ["axum", "axum-server", "tower", "tower-http"]
 cli = ["clap"]
+performance = ["redis", "metrics", "metrics-exporter-prometheus", "database-pool"]
+database-pool = ["sqlx", "deadpool-postgres", "deadpool-redis"]
+security = ["aes-gcm", "rand"]
 
 # Embedding provider features
 embeddings-openai = ["async-openai"]

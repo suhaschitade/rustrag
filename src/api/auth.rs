@@ -236,13 +236,13 @@ impl ApiKeyStore {
         if let Some(api_key) = keys.get_mut(&key_hash) {
             // Check if key is active
             if !api_key.is_active {
-                return Err(Error::authentication("API key is deactivated"));
+                return Err(ErrorResponse::new("AUTHENTICATION_ERROR", "API key is deactivated"));
             }
 
             // Check if key has expired
             if let Some(expires_at) = api_key.expires_at {
                 if Utc::now() > expires_at {
-                    return Err(Error::authentication("API key has expired"));
+                    return Err(ErrorResponse::new("AUTHENTICATION_ERROR", "API key has expired"));
                 }
             }
 
@@ -252,7 +252,7 @@ impl ApiKeyStore {
 
             Ok(api_key.clone())
         } else {
-            Err(Error::authentication("Invalid API key"))
+            Err(ErrorResponse::new("AUTHENTICATION_ERROR", "Invalid API key"))
         }
     }
 
@@ -273,7 +273,7 @@ impl ApiKeyStore {
             }
         }
         
-        Err(Error::not_found("API key"))
+        Err(ErrorResponse::not_found("API key"))
     }
 
     /// Revoke an API key
@@ -290,7 +290,7 @@ impl ApiKeyStore {
             }
         }
         
-        Err(Error::not_found("API key"))
+        Err(ErrorResponse::not_found("API key"))
     }
 
     /// Delete an API key completely
@@ -305,7 +305,7 @@ impl ApiKeyStore {
             }
         }
         
-        Err(Error::not_found("API key"))
+        Err(ErrorResponse::not_found("API key"))
     }
 }
 
@@ -365,7 +365,6 @@ pub async fn auth_middleware(
                 Json(ErrorResponse::new(
                     "AUTHENTICATION_ERROR",
                     &e.to_string(),
-                    401,
                 )),
             ))
         }
@@ -399,7 +398,6 @@ fn extract_api_key(headers: &HeaderMap) -> Result<String, (StatusCode, Json<Erro
         Json(ErrorResponse::new(
             "AUTHENTICATION_ERROR",
             "Missing API key. Provide via 'Authorization: Bearer <token>' or 'X-API-Key' header",
-            401,
         )),
     ))
 }

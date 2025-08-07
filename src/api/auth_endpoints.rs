@@ -59,7 +59,7 @@ pub async fn create_api_key(
     if !auth_context.has_permission(&Permission::Admin) {
         return Err(crate::utils::Error::authorization(
             "Admin permission required to create API keys"
-        ));
+        ).into());
     }
 
     let (api_key, key_value) = api_key_store.create_api_key(request).await?;
@@ -87,7 +87,7 @@ pub async fn list_api_keys(
     if !auth_context.has_permission(&Permission::Admin) {
         return Err(crate::utils::Error::authorization(
             "Admin permission required to list API keys"
-        ));
+        ).into());
     }
 
     pagination.validate().map_err(|e| validation_error("pagination", &e))?;
@@ -136,7 +136,7 @@ pub async fn get_api_key(
     if !auth_context.has_permission(&Permission::Admin) && auth_context.api_key_id != key_id {
         return Err(crate::utils::Error::authorization(
             "You can only view your own API key or need admin permission"
-        ));
+        ).into());
     }
 
     let api_key = api_key_store.get_api_key(key_id).await?;
@@ -158,7 +158,7 @@ pub async fn update_api_key(
     if !auth_context.has_permission(&Permission::Admin) {
         return Err(crate::utils::Error::authorization(
             "Admin permission required to update API keys"
-        ));
+        ).into());
     }
 
     // Get current key
@@ -217,7 +217,7 @@ pub async fn revoke_api_key(
     if !auth_context.has_permission(&Permission::Admin) {
         return Err(crate::utils::Error::authorization(
             "Admin permission required to revoke API keys"
-        ));
+        ).into());
     }
 
     // Cannot revoke own key
@@ -245,7 +245,7 @@ pub async fn delete_api_key(
     if !auth_context.has_permission(&Permission::Admin) {
         return Err(crate::utils::Error::authorization(
             "Admin permission required to delete API keys"
-        ));
+        ).into());
     }
 
     // Cannot delete own key
@@ -321,7 +321,7 @@ pub async fn get_all_rate_limit_statuses(
     if !auth_context.has_permission(&Permission::Admin) {
         return Err(crate::utils::Error::authorization(
             "Admin permission required to view all rate limit statuses"
-        ));
+        ).into());
     }
 
     let all_statuses = rate_limiter.get_all_statuses().await;
@@ -353,7 +353,7 @@ pub async fn get_auth_stats(
     if !auth_context.has_permission(&Permission::Admin) {
         return Err(crate::utils::Error::authorization(
             "Admin permission required to view authentication statistics"
-        ));
+        ).into());
     }
 
     let api_keys = api_key_store.list_api_keys().await?;
@@ -397,7 +397,7 @@ pub async fn test_read_permission(
     if !auth_context.has_permission(&Permission::Read) {
         return Err(crate::utils::Error::authorization(
             "Read permission required"
-        ));
+        ).into());
     }
 
     Ok(Json(ApiResponse::success(
@@ -412,7 +412,7 @@ pub async fn test_write_permission(
     if !auth_context.has_permission(&Permission::Write) {
         return Err(crate::utils::Error::authorization(
             "Write permission required"
-        ));
+        ).into());
     }
 
     Ok(Json(ApiResponse::success(
@@ -427,7 +427,7 @@ pub async fn test_delete_permission(
     if !auth_context.has_permission(&Permission::Delete) {
         return Err(crate::utils::Error::authorization(
             "Delete permission required"
-        ));
+        ).into());
     }
 
     Ok(Json(ApiResponse::success(
@@ -442,7 +442,7 @@ pub async fn test_admin_permission(
     if !auth_context.has_permission(&Permission::Admin) {
         return Err(crate::utils::Error::authorization(
             "Admin permission required"
-        ));
+        ).into());
     }
 
     Ok(Json(ApiResponse::success(

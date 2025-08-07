@@ -6,32 +6,7 @@ use axum::{
 use tracing::error;
 
 use crate::utils::Error;
-
-/// API Error response structure
-#[derive(Debug, serde::Serialize)]
-pub struct ErrorResponse {
-    pub error: String,
-    pub message: String,
-    pub code: u16,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub details: Option<serde_json::Value>,
-}
-
-impl ErrorResponse {
-    pub fn new(error: &str, message: &str, code: u16) -> Self {
-        Self {
-            error: error.to_string(),
-            message: message.to_string(),
-            code,
-            details: None,
-        }
-    }
-
-    pub fn with_details(mut self, details: serde_json::Value) -> Self {
-        self.details = Some(details);
-        self
-    }
-}
+use crate::api::types::ErrorResponse as ApiErrorResponse;
 
 /// Convert our custom Error type to HTTP responses
 impl IntoResponse for Error {
@@ -87,11 +62,7 @@ impl IntoResponse for Error {
         // Log the error
         error!("API Error: {} - {}", error_type, message);
 
-        let error_response = ErrorResponse::new(
-            error_type,
-            &message,
-            status.as_u16(),
-        );
+        let error_response = ApiErrorResponse::new(error_type, message);
 
         (status, Json(error_response)).into_response()
     }

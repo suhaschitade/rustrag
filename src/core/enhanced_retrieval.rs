@@ -89,6 +89,7 @@ pub struct EnhancedRetrievalService {
     vector_store: Arc<dyn VectorStore + Send + Sync>,
     relevance_scorer: Arc<RelevanceScorer>,
     hybrid_scorer: Arc<HybridSearchScorer>,
+    reranking_service: Option<Arc<crate::core::RerankingService>>,
     stats: Arc<tokio::sync::RwLock<EnhancedRetrievalStats>>,
 }
 
@@ -131,6 +132,7 @@ impl EnhancedRetrievalService {
             vector_store,
             relevance_scorer,
             hybrid_scorer,
+            reranking_service: None,
             stats,
         }
     }
@@ -465,6 +467,17 @@ impl EnhancedRetrievalService {
     /// Get current configuration
     pub fn get_config(&self) -> &EnhancedRetrievalConfig {
         &self.config
+    }
+
+    /// Set reranking service for enhanced result refinement
+    pub fn with_reranking_service(mut self, reranking_service: Arc<crate::core::RerankingService>) -> Self {
+        self.reranking_service = Some(reranking_service);
+        self
+    }
+
+    /// Check if reranking is enabled
+    pub fn has_reranking(&self) -> bool {
+        self.reranking_service.is_some()
     }
 
     /// Explain retrieval results for debugging and transparency

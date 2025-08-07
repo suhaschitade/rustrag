@@ -9,6 +9,7 @@ pub mod query_expansion;
 // pub mod enhanced_query_processor; // TODO: Implement when QueryProcessor types are available
 pub mod relevance_scorer;
 pub mod enhanced_retrieval;
+pub mod reranking;
 
 // Re-exports for easier access
 pub mod similarity_search;
@@ -48,4 +49,8 @@ pub use relevance_scorer::{
 pub use enhanced_retrieval::{
     EnhancedRetrievalService, EnhancedRetrievalServiceBuilder, EnhancedRetrievalConfig,
     EnhancedRankedChunk, EnhancedRetrievalStats, RetrievalStrategy,
+};
+pub use reranking::{
+    RerankingService, RerankingConfig, RerankingStrategy, RerankedResult,
+    RerankingScoreComponents, RerankingStats, DiversityConfig, QualityConfig, TemporalConfig,
 };

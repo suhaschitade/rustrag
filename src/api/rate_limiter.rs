@@ -317,7 +317,6 @@ pub async fn rate_limit_middleware(
                 Json(ErrorResponse::new(
                     "RATE_LIMIT_EXCEEDED",
                     &format!("Rate limit exceeded. Try again in {} seconds", retry_after),
-                    429,
                 )),
             ).into_response();
 

@@ -13,7 +13,8 @@ pub mod models;
 // pub mod processing; // TODO: Implement processing module
 pub mod storage;
 pub mod utils;
-
+// pub mod security; // Temporarily disabled to focus on performance
+pub mod performance;
 // Re-export commonly used types for convenience
 pub use config::Settings;
 pub use models::{Document, DocumentChunk, Query, QueryResponse};

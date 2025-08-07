@@ -1,6 +1,10 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+use axum::response::{IntoResponse, Json, Response};
+use axum::http::StatusCode;
+use std::collections::HashMap;
+use std::fmt;
 
 /// Standard API response wrapper
 #[derive(Debug, Serialize)]
@@ -273,4 +277,145 @@ pub enum BatchStatus {
     PartiallyCompleted,
     #[serde(rename = "failed")]
     Failed,
+}
+
+/// Standard error response
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ErrorResponse {
+    pub error_code: String,
+    pub message: String,
+    pub details: Option<HashMap<String, String>>,
+    pub timestamp: DateTime<Utc>,
+}
+
+impl ErrorResponse {
+    pub fn new(error_code: impl Into<String>, message: impl Into<String>) -> Self {
+        Self {
+            error_code: error_code.into(),
+            message: message.into(),
+            details: None,
+            timestamp: Utc::now(),
+        }
+    }
+
+    pub fn with_details(
+        error_code: impl Into<String>,
+        message: impl Into<String>,
+        details: HashMap<String, String>,
+    ) -> Self {
+        Self {
+            error_code: error_code.into(),
+            message: message.into(),
+            details: Some(details),
+            timestamp: Utc::now(),
+        }
+    }
+
+    pub fn validation_error(message: impl Into<String>) -> Self {
+        Self::new("VALIDATION_ERROR", message)
+    }
+
+    pub fn internal_error(message: impl Into<String>) -> Self {
+        Self::new("INTERNAL_ERROR", message)
+    }
+
+    pub fn not_found(resource: impl Into<String>) -> Self {
+        Self::new("NOT_FOUND", format!("{} not found", resource.into()))
+    }
+
+    pub fn unauthorized() -> Self {
+        Self::new("UNAUTHORIZED", "Authentication required")
+    }
+
+    pub fn forbidden() -> Self {
+        Self::new("FORBIDDEN", "Access denied")
+    }
+}
+
+impl fmt::Display for ErrorResponse {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}: {}", self.error_code, self.message)
+    }
+}
+
+impl From<crate::utils::Error> for ErrorResponse {
+    fn from(err: crate::utils::Error) -> Self {
+        match err {
+            crate::utils::Error::Validation { field, message } => {
+                Self::new("VALIDATION_ERROR", format!("Validation failed for '{}': {}", field, message))
+            }
+            crate::utils::Error::NotFound { resource } => {
+                Self::new("NOT_FOUND", format!("{} not found", resource))
+            }
+            crate::utils::Error::Authentication { message } => {
+                Self::new("AUTHENTICATION_ERROR", message)
+            }
+            crate::utils::Error::Authorization { message } => {
+                Self::new("AUTHORIZATION_ERROR", message)
+            }
+            crate::utils::Error::DocumentProcessing { message } => {
+                Self::new("DOCUMENT_PROCESSING_ERROR", message)
+            }
+            crate::utils::Error::VectorDb { message } => {
+                Self::new("VECTOR_DB_ERROR", message)
+            }
+            crate::utils::Error::LlmApi { message } => {
+                Self::new("LLM_API_ERROR", message)
+            }
+            crate::utils::Error::ExternalService { service, message } => {
+                Self::new("EXTERNAL_SERVICE_ERROR", format!("{}: {}", service, message))
+            }
+            _ => {
+                Self::new("INTERNAL_SERVER_ERROR", "An internal server error occurred")
+            }
+        }
+    }
+}
+
+impl IntoResponse for ErrorResponse {
+    fn into_response(self) -> Response {
+        let status = match self.error_code.as_str() {
+            "VALIDATION_ERROR" => StatusCode::BAD_REQUEST,
+            "NOT_FOUND" => StatusCode::NOT_FOUND,
+            "UNAUTHORIZED" => StatusCode::UNAUTHORIZED,
+            "FORBIDDEN" => StatusCode::FORBIDDEN,
+            _ => StatusCode::INTERNAL_SERVER_ERROR,
+        };
+        
+        (status, Json(self)).into_response()
+    }
+}
+
+/// Standard API result type for Axum handlers
+pub type ApiResult<T> = Result<T, ErrorResponse>;
+
+/// Convenience functions for creating common responses
+pub fn validation_error(field: &str, message: &str) -> ErrorResponse {
+    ErrorResponse::new("VALIDATION_ERROR", format!("Validation failed for '{}': {}", field, message))
+}
+
+pub fn internal_error(message: &str) -> ErrorResponse {
+    ErrorResponse::internal_error(message)
+}
+
+pub fn not_found_error(resource: impl Into<String>) -> ErrorResponse {
+    ErrorResponse::not_found(resource)
+}
+
+pub fn success_response<T: Serialize>(data: T) -> ApiResponse<T> {
+    ApiResponse::success(data)
+}
+
+pub fn success_with_message<T: Serialize>(data: T, message: String) -> ApiResponse<T> {
+    ApiResponse::success_with_message(data, message)
+}
+
+pub fn error_response(message: String) -> ApiResponse<()> {
+    ApiResponse {
+        success: false,
+        data: None,
+        message: Some(message),
+        timestamp: Utc::now(),
+        request_id: None,
+    }
 }

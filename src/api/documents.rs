@@ -11,10 +11,9 @@ use tokio::fs;
 use tracing::{info, warn, error};
 use uuid::Uuid;
 
-use crate::api::{
+use crate::api::types::{
     ApiResponse, ApiResult, DocumentUploadResponse, DocumentStatus,
-    PaginatedResponse, PaginationParams,
-    validation_error, internal_error,
+    PaginatedResponse, PaginationParams, validation_error, internal_error,
 };
 use crate::core::{
     DocumentProcessor, DocumentFormatProcessor, ChunkingStrategy,
