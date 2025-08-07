@@ -5,6 +5,6 @@ pub mod vector_store;
 pub use database::Database;
 pub use file_storage::FileStorage;
 pub use vector_store::{
-    VectorStore, QdrantVectorStore, QdrantConfig, MockVectorStore,
+    VectorStore, QdrantVectorStore, QdrantConfig, MockVectorStore, InMemoryVectorStore,
     SimilarityMatch, CollectionInfo, PayloadFieldType,
 };

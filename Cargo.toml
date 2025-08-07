@@ -82,6 +82,8 @@ hf-hub = { version = "0.3", optional = true }
 tokenizers = { version = "0.15", optional = true }
 # Base64 encoding for API keys
 base64 = "0.22"
+# SHA256 hashing for API keys
+sha256 = "1.4"
 
 # CLI (for main binary)
 clap = { version = "4.0", features = ["derive", "env"], optional = true }

@@ -7,6 +7,28 @@ pub struct Settings {
     pub database: DatabaseSettings,
     pub log: LogSettings,
     pub openai: OpenAISettings,
+    pub auth: AuthSettings,
+    pub rate_limit: RateLimitSettings,
+}
+
+/// Authentication settings
+#[derive(Debug, Deserialize, Clone)]
+pub struct AuthSettings {
+    /// List of static API keys for basic authentication
+    pub static_api_keys: Vec<String>,
+    /// Enable or disable authentication
+    pub enabled: bool,
+}
+
+/// Rate limiting settings
+#[derive(Debug, Deserialize, Clone)]
+pub struct RateLimitSettings {
+    /// Enable or disable rate limiting
+    pub enabled: bool,
+    /// Requests per minute for unauthenticated users (by IP)
+    pub unauthenticated_rpm: u32,
+    /// Requests per minute for authenticated users (by API key)
+    pub authenticated_rpm: u32,
 }
 
 /// Server-related settings
@@ -70,6 +92,32 @@ impl Settings {
             openai: OpenAISettings {
                 api_key: std::env::var("OPENAI_API_KEY").unwrap_or_else(|_| "not_set".to_string()),
                 model: std::env::var("OPENAI_MODEL").unwrap_or_else(|_| "gpt-4".to_string()),
+            },
+            auth: AuthSettings {
+                static_api_keys: std::env::var("STATIC_API_KEYS")
+                    .unwrap_or_default()
+                    .split(',')
+                    .filter(|key| !key.trim().is_empty())
+                    .map(|key| key.trim().to_string())
+                    .collect(),
+                enabled: std::env::var("AUTH_ENABLED")
+                    .unwrap_or_else(|_| "true".to_string())
+                    .parse()
+                    .unwrap_or(true),
+            },
+            rate_limit: RateLimitSettings {
+                enabled: std::env::var("RATE_LIMIT_ENABLED")
+                    .unwrap_or_else(|_| "true".to_string())
+                    .parse()
+                    .unwrap_or(true),
+                unauthenticated_rpm: std::env::var("RATE_LIMIT_UNAUTHENTICATED_RPM")
+                    .unwrap_or_else(|_| "60".to_string())
+                    .parse()
+                    .unwrap_or(60),
+                authenticated_rpm: std::env::var("RATE_LIMIT_AUTHENTICATED_RPM")
+                    .unwrap_or_else(|_| "1000".to_string())
+                    .parse()
+                    .unwrap_or(1000),
             },
         })
     }

@@ -7,15 +7,21 @@ use futures::stream::{self, Stream};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::Instant;
-use tracing::info;
+use tracing::{info, error};
 use uuid::Uuid;
 
 use crate::api::{
-    ApiResponse, ApiResult, QueryProcessingResponse, RetrievedChunk, Citation,
+    ApiResponse, ApiResult, QueryProcessingResponse, RetrievedChunk,
     PaginatedResponse, PaginationParams,
-    validation_error,
+    validation_error, internal_error,
 };
+use crate::core::{
+    QueryService,
+};
+use crate::models::QueryOptions;
+use crate::storage::vector_store::InMemoryVectorStore;
 
 // Request/Response types
 #[derive(Debug, Serialize, Deserialize)]
@@ -71,7 +77,7 @@ pub struct StreamingChunk {
 pub async fn process_query(
     Json(request): Json<QueryRequest>,
 ) -> ApiResult<Json<ApiResponse<QueryProcessingResponse>>> {
-    let start_time = Instant::now();
+    let _start_time = Instant::now();
     let query_id = Uuid::new_v4();
     
     info!("Processing query (ID: {}): {}", query_id, request.query);
@@ -98,46 +104,41 @@ pub async fn process_query(
         }
     }
     
-    // TODO: Implement actual RAG processing pipeline:
-    // 1. Embed the query
-    // 2. Retrieve similar chunks from vector store
-    // 3. Rank and filter results
-    // 4. Generate answer using LLM
-    
-    let processing_time = start_time.elapsed().as_millis() as u64;
-    
-    // Placeholder response
-    let response = QueryProcessingResponse {
-        query_id,
-        query: request.query.clone(),
-        answer: "This is a placeholder answer. Real RAG processing will be implemented in Activity 4.".to_string(),
-        confidence_score: 0.85,
-        retrieved_chunks: vec![
-            // TODO: Replace with actual retrieved chunks
-            RetrievedChunk {
-                id: Uuid::new_v4(),
-                document_id: Uuid::new_v4(),
-                content: "Sample retrieved chunk content...".to_string(),
-                similarity_score: 0.92,
-                chunk_index: 0,
-                metadata: serde_json::json!({"source": "sample.pdf", "page": 1}),
-            }
-        ],
-        citations: vec![
-            // TODO: Replace with actual citations
-            Citation {
-                document_id: Uuid::new_v4(),
-                document_title: "Sample Document".to_string(),
-                chunk_id: Uuid::new_v4(),
-                page_number: Some(1),
-                confidence: 0.92,
-            }
-        ],
-        processing_time_ms: processing_time,
-        model_used: request.model.unwrap_or("gpt-4".to_string()),
+    // Create QueryOptions from request parameters
+    let query_options = QueryOptions {
+        max_chunks: request.max_chunks,
+        similarity_threshold: request.similarity_threshold,
+        include_citations: request.include_citations.unwrap_or(true),
+        document_ids: request.document_ids.clone(),
+        filter_tags: None, // Not available in current request struct
+        filter_category: None, // Not available in current request struct
+        temperature: request.temperature,
+        max_tokens: request.max_tokens,
+    };
+
+    // Initialize services (in production, these would be dependency-injected)
+    let query_service = match create_query_service().await {
+        Ok(service) => service,
+        Err(e) => {
+            error!("Failed to initialize query service: {}", e);
+            return Err(internal_error("Service initialization failed"));
+        }
+    };
+
+    // Process the query using the RAG pipeline
+    let response = match query_service.process_query(
+        request.query.clone(),
+        Some(query_options),
+        request.model.clone(),
+    ).await {
+        Ok(response) => response,
+        Err(e) => {
+            error!("Query processing failed: {}", e);
+            return Err(e);
+        }
     };
     
-    info!("Query processed successfully (ID: {}) in {}ms", query_id, processing_time);
+    info!("Query processed successfully (ID: {}) in {}ms", response.query_id, response.processing_time_ms);
     
     Ok(Json(ApiResponse::success(response)))
 }
@@ -270,4 +271,83 @@ pub async fn list_query_history(
     );
     
     Ok(Json(ApiResponse::success(paginated_response)))
+}
+
+/// Search documents without generating responses
+pub async fn search_documents(
+    Json(request): Json<QueryRequest>,
+) -> ApiResult<Json<ApiResponse<Vec<RetrievedChunk>>>> {
+    let start_time = Instant::now();
+    let query_id = Uuid::new_v4();
+    
+    info!("Starting document search (ID: {}): {}", query_id, request.query);
+    
+    // Validate request
+    if request.query.trim().is_empty() {
+        return Err(validation_error("query", "Query cannot be empty"));
+    }
+    
+    // Create QueryOptions from request parameters
+    let query_options = QueryOptions {
+        max_chunks: request.max_chunks,
+        similarity_threshold: request.similarity_threshold,
+        include_citations: request.include_citations.unwrap_or(false), // No citations for search-only
+        document_ids: request.document_ids.clone(),
+        filter_tags: None,
+        filter_category: None,
+        temperature: None, // Not needed for search-only
+        max_tokens: None, // Not needed for search-only
+    };
+
+    // Initialize services
+    let query_service = match create_query_service().await {
+        Ok(service) => service,
+        Err(e) => {
+            error!("Failed to initialize query service: {}", e);
+            return Err(internal_error("Service initialization failed"));
+        }
+    };
+
+    // Perform document search
+    let chunks = match query_service.search_documents(
+        request.query.clone(),
+        Some(query_options),
+    ).await {
+        Ok(chunks) => chunks,
+        Err(e) => {
+            error!("Document search failed: {}", e);
+            return Err(e);
+        }
+    };
+
+    let processing_time = start_time.elapsed().as_millis();
+    let chunks_count = chunks.len();
+    info!("Document search completed (ID: {}) in {}ms, found {} chunks", 
+          query_id, processing_time, chunks_count);
+    
+    Ok(Json(ApiResponse::success_with_message(
+        chunks,
+        format!("Found {} relevant document chunks", chunks_count),
+    )))
+}
+
+// ==== Helper Functions ====
+
+/// Create a query service instance (temporary implementation)
+/// In production, this would be provided via dependency injection
+async fn create_query_service() -> Result<QueryService, Box<dyn std::error::Error + Send + Sync>> {
+    // Initialize embedding service with mock provider for development
+    use crate::core::embeddings::EmbeddingServiceBuilder;
+    
+    let embedding_service = Arc::new(
+        EmbeddingServiceBuilder::mock()?
+    );
+    
+    // Initialize in-memory vector store (temporary)
+    let vector_store = Arc::new(InMemoryVectorStore::new()) as Arc<dyn crate::storage::VectorStore + Send + Sync>;
+    
+    // Create query service
+    let query_service = QueryService::new(embedding_service, vector_store)?;
+    
+    Ok(query_service)
 }

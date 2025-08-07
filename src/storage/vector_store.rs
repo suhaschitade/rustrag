@@ -381,6 +381,260 @@ impl VectorStore for QdrantVectorStore {
     }
 }
 
+/// In-memory vector store for testing and development
+use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
+
+#[derive(Debug, Clone)]
+pub struct InMemoryVector {
+    pub id: Uuid,
+    pub embedding: Vec<f32>,
+    pub metadata: serde_json::Value,
+}
+
+pub struct InMemoryVectorStore {
+    vectors: Arc<RwLock<HashMap<Uuid, InMemoryVector>>>,
+    dimension: usize,
+}
+
+impl InMemoryVectorStore {
+    pub fn new() -> Self {
+        Self {
+            vectors: Arc::new(RwLock::new(HashMap::new())),
+            dimension: 384, // Default dimension
+        }
+    }
+    
+    pub fn with_dimension(dimension: usize) -> Self {
+        Self {
+            vectors: Arc::new(RwLock::new(HashMap::new())),
+            dimension,
+        }
+    }
+    
+    fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
+        if a.len() != b.len() {
+            return 0.0;
+        }
+        
+        let dot_product: f32 = a.iter().zip(b.iter()).map(|(x, y)| x * y).sum();
+        let norm_a: f32 = a.iter().map(|x| x * x).sum::<f32>().sqrt();
+        let norm_b: f32 = b.iter().map(|x| x * x).sum::<f32>().sqrt();
+        
+        if norm_a == 0.0 || norm_b == 0.0 {
+            return 0.0;
+        }
+        
+        dot_product / (norm_a * norm_b)
+    }
+}
+
+#[async_trait]
+impl VectorStore for InMemoryVectorStore {
+    async fn insert_embeddings(&self, chunks: Vec<DocumentChunk>) -> Result<()> {
+        let mut vectors = self.vectors.write().unwrap();
+        
+        for chunk in chunks {
+            if let Some(embedding) = chunk.embedding {
+                let vector = InMemoryVector {
+                    id: chunk.id,
+                    embedding,
+                    metadata: serde_json::json!({
+                        "chunk_id": chunk.id,
+                        "document_id": chunk.document_id,
+                        "content": chunk.content,
+                        "chunk_index": chunk.chunk_index,
+                        "created_at": chunk.created_at,
+                        "metadata": chunk.metadata
+                    }),
+                };
+                vectors.insert(chunk.id, vector);
+            }
+        }
+        
+        tracing::info!("InMemory: Inserted {} embeddings", vectors.len());
+        Ok(())
+    }
+    
+    async fn search_similar_chunks(&self, _query: &Query) -> Result<Vec<DocumentChunk>> {
+        // This would need query embedding implementation
+        tracing::info!("InMemory: search_similar_chunks not implemented - use similarity_search instead");
+        Ok(vec![])
+    }
+    
+    async fn store_embedding(
+        &self,
+        chunk_id: Uuid,
+        embedding: Vec<f32>,
+        metadata: serde_json::Value,
+    ) -> Result<()> {
+        if embedding.len() != self.dimension {
+            return Err(crate::utils::Error::vector_db(format!(
+                "Embedding dimension mismatch: expected {}, got {}",
+                self.dimension, embedding.len()
+            )));
+        }
+        
+        let vector = InMemoryVector {
+            id: chunk_id,
+            embedding,
+            metadata,
+        };
+        
+        let mut vectors = self.vectors.write().unwrap();
+        vectors.insert(chunk_id, vector);
+        
+        tracing::info!("InMemory: Stored embedding for chunk: {}", chunk_id);
+        Ok(())
+    }
+    
+    async fn search_similar(
+        &self,
+        query_embedding: Vec<f32>,
+        limit: usize,
+        threshold: f32,
+    ) -> Result<Vec<SimilarityMatch>> {
+        let vectors = self.vectors.read().unwrap();
+        
+        let mut matches: Vec<SimilarityMatch> = vectors
+            .values()
+            .map(|vector| {
+                let score = Self::cosine_similarity(&query_embedding, &vector.embedding);
+                SimilarityMatch {
+                    chunk_id: vector.id,
+                    score,
+                    metadata: vector.metadata.clone(),
+                }
+            })
+            .filter(|m| m.score >= threshold)
+            .collect();
+        
+        // Sort by score descending
+        matches.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
+        matches.truncate(limit);
+        
+        tracing::info!("InMemory: Found {} matches above threshold {}", matches.len(), threshold);
+        Ok(matches)
+    }
+    
+    async fn similarity_search(
+        &self,
+        query_embedding: &[f32],
+        limit: usize,
+        _filters: Option<&SearchFilters>,
+    ) -> Result<Vec<RetrievedChunk>> {
+        let vectors = self.vectors.read().unwrap();
+        
+        let mut matches: Vec<(f32, &InMemoryVector)> = vectors
+            .values()
+            .map(|vector| {
+                let score = Self::cosine_similarity(query_embedding, &vector.embedding);
+                (score, vector)
+            })
+            .collect();
+        
+        // Sort by score descending
+        matches.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap());
+        matches.truncate(limit);
+        
+        let results: Vec<RetrievedChunk> = matches
+            .into_iter()
+            .enumerate()
+            .map(|(i, (score, vector))| {
+                let metadata = vector.metadata.as_object().unwrap();
+                
+                RetrievedChunk {
+                    id: vector.id,
+                    chunk_id: vector.id,
+                    document_id: metadata.get("document_id")
+                        .and_then(|v| v.as_str())
+                        .and_then(|s| Uuid::parse_str(s).ok())
+                        .unwrap_or_else(Uuid::new_v4),
+                    document_title: format!("Document {}", i + 1), // TODO: Extract from metadata
+                    content: metadata.get("content")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("No content")
+                        .to_string(),
+                    similarity_score: score,
+                    chunk_index: metadata.get("chunk_index")
+                        .and_then(|v| v.as_i64())
+                        .unwrap_or(0) as i32,
+                    embedding: Some(vector.embedding.clone()),
+                    metadata: vector.metadata.clone(),
+                    created_at: metadata.get("created_at")
+                        .and_then(|v| v.as_str())
+                        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+                        .map(|dt| dt.with_timezone(&chrono::Utc))
+                        .unwrap_or_else(chrono::Utc::now),
+                }
+            })
+            .collect();
+        
+        tracing::info!("InMemory: Similarity search returned {} results", results.len());
+        Ok(results)
+    }
+    
+    async fn get_chunk_by_id(&self, chunk_id: &Uuid) -> Result<Option<RetrievedChunk>> {
+        let vectors = self.vectors.read().unwrap();
+        
+        if let Some(vector) = vectors.get(chunk_id) {
+            let metadata = vector.metadata.as_object().unwrap();
+            
+            Ok(Some(RetrievedChunk {
+                id: vector.id,
+                chunk_id: vector.id,
+                document_id: metadata.get("document_id")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| Uuid::parse_str(s).ok())
+                    .unwrap_or_else(Uuid::new_v4),
+                document_title: "Document".to_string(),
+                content: metadata.get("content")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("No content")
+                    .to_string(),
+                similarity_score: 1.0,
+                chunk_index: metadata.get("chunk_index")
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or(0) as i32,
+                embedding: Some(vector.embedding.clone()),
+                metadata: vector.metadata.clone(),
+                created_at: chrono::Utc::now(),
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+    
+    async fn delete_vector(&self, chunk_id: Uuid) -> Result<()> {
+        let mut vectors = self.vectors.write().unwrap();
+        vectors.remove(&chunk_id);
+        
+        tracing::info!("InMemory: Deleted vector for chunk: {}", chunk_id);
+        Ok(())
+    }
+    
+    async fn get_collection_info(&self) -> Result<CollectionInfo> {
+        let vectors = self.vectors.read().unwrap();
+        
+        Ok(CollectionInfo {
+            name: "in_memory_collection".to_string(),
+            status: "Ready".to_string(),
+            vectors_count: Some(vectors.len() as u64),
+            points_count: vectors.len() as u64,
+            vectors_config: Some(VectorConfig {
+                size: self.dimension as u64,
+                distance: "Cosine".to_string(),
+            }),
+        })
+    }
+}
+
+impl Default for InMemoryVectorStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Mock implementation of a vector store
 pub struct MockVectorStore;
 

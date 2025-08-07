@@ -6,6 +6,7 @@ pub mod embeddings;
 pub mod generation;
 pub mod metadata_extractor;
 pub mod query_processor;
+pub mod query_service;
 pub mod retrieval;
 pub mod similarity_search;
 
@@ -19,6 +20,7 @@ pub use embedding_cache::{
 pub use generation::{GenerationService, GenerationConfig};
 pub use metadata_extractor::MetadataExtractor;
 pub use query_processor::{QueryProcessor, QueryProcessorConfig, ProcessedQuery, QueryType, QueryValidationResult};
+pub use query_service::{QueryService, QueryServiceConfig, QueryServiceStatistics};
 pub use retrieval::{RetrievalService, RetrievalConfig, RankedChunk, RetrievalStats};
 pub use similarity_search::{
     SimilaritySearchEngine, SearchConfig, SearchFilters, SearchResult, SearchStats,
